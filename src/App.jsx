@@ -3,22 +3,48 @@ import FileUpload from './components/FileUpload';
 import Controls from './components/Controls';
 import Summary from './components/Summary';
 import SeatingPlanDisplay from './components/SeatingPlanDisplay';
-import { generateGreedyPlan } from './utils/allocator';
+// We no longer import the local allocator
 
 function App() {
     const [students, setStudents] = useState([]);
     const [halls, setHalls] = useState([]);
     const [seatingPlan, setSeatingPlan] = useState([]);
     const [error, setError] = useState(null);
+    const [isLoading, setIsLoading] = useState(false); // Add loading state
 
-    const handleGeneratePlan = () => {
+    const handleGeneratePlan = async () => {
         setError(null); // Clear previous errors
-        const { plan, error: planError } = generateGreedyPlan(students, halls);
-        if (planError) {
-            setError(planError);
+        setIsLoading(true); // Set loading
+        setSeatingPlan([]); // Clear previous plan
+
+        try {
+            // Send the student and hall data to the Java backend
+            // This assumes your Java backend is running on http://localhost:8080
+            const response = await fetch('http://localhost:8080/generate-plan', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ students: students, halls: halls }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                // If response is not ok, read the error from the backend
+                setError(data.error || 'An unknown error occurred.');
+                setSeatingPlan([]);
+            } else {
+                // Success
+                setSeatingPlan(data.plan);
+            }
+
+        } catch (err) {
+            console.error("API call failed:", err);
+            setError("Failed to connect to the server. Is the Java backend running?");
             setSeatingPlan([]);
-        } else {
-            setSeatingPlan(plan);
+        } finally {
+            setIsLoading(false); // Stop loading
         }
     };
 
@@ -27,6 +53,7 @@ function App() {
         setHalls([]);
         setSeatingPlan([]);
         setError(null);
+        setIsLoading(false);
         // This is a common way to reset file inputs
         document.getElementById('students-file').value = '';
         document.getElementById('halls-file').value = '';
@@ -56,11 +83,19 @@ function App() {
                 />
             </div>
             
-            <Controls onGenerate={handleGeneratePlan} onReset={handleReset} isReady={areFilesLoaded} />
+            {/* Pass isLoading to Controls component */}
+            <Controls 
+                onGenerate={handleGeneratePlan} 
+                onReset={handleReset} 
+                isReady={areFilesLoaded && !isLoading} // Button is disabled if files not loaded OR if loading
+                isLoading={isLoading} // Pass loading state
+            />
+
+            {isLoading && <div style={{textAlign: 'center', fontSize: '1.2rem', margin: '1rem'}}>Generating plan...</div>}
 
             {error && <div className="error-message">{error}</div>}
 
-            {areFilesLoaded && <Summary students={students} halls={halls} plan={seatingPlan} />}
+            {areFilesLoaded && !isLoading && <Summary students={students} halls={halls} plan={seatingPlan} />}
 
             <SeatingPlanDisplay plan={seatingPlan} />
         </div>
